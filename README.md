@@ -24,3 +24,15 @@ Train the model:
 python gnn_gw_sbm_only.py
 ```
 
+Outputs (all gitignored, regenerated locally — not stored in the repo):
+
+- `data/train_data.pt` — cached training pairs
+- `checkpoints/gw_model.pt` — trained model weights
+- `results/run_results.pt` — predictions, metrics, and losses from the run
+- `results/gw_results.png` — the result figure
+
+  Flags:
+
+- `--n-train N` — train on `N` pairs sampled from the cached pool this run (default
+  1000; must be `<= N_TRAIN_POOL`).
+- `--regen-data` — force regenerating the training pool instead of loading the cache.
