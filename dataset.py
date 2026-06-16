@@ -5,18 +5,6 @@ import ot
 from scipy.sparse.csgraph import shortest_path
 from scipy.sparse import csr_matrix
 
-
-def generate_er_graph(n_nodes, p=None):
-    """Erdos-Renyi random graph."""
-    if p is None:
-        p = np.random.uniform(0.05, 0.6)
-    A = np.zeros((n_nodes, n_nodes))
-    for i in range(n_nodes):
-        for j in range(i + 1, n_nodes):
-            if np.random.rand() < p:
-                A[i, j] = A[j, i] = 1
-    return A
-
 def generate_sbm_graph(n_nodes, n_blocks, p_in=0.7, p_out=0.05):
     """Stochastic Block Model graph."""
     block_sizes = np.random.multinomial(n_nodes, np.ones(n_blocks) / n_blocks)
