@@ -83,20 +83,16 @@ def generate_dataset(n_pairs, min_nodes=20, max_nodes=100, min_blocks=2, max_blo
 
     # Pre-generate a pool of graphs: mix types of structures
     n_graphs = int(n_pairs * 1.5)
-    graph_types = ['sbm_dense', 'sbm_sparse', 'er_dense', 'er_sparse']
+    graph_types = ['sbm_dense', 'sbm_sparse']
     for i in range(n_graphs):
         n = np.random.randint(min_nodes, max_nodes + 1)
         gtype = np.random.choice(graph_types)
         if gtype == 'sbm_dense':
             k = np.random.randint(min_blocks, max_blocks + 1)
             A = generate_sbm_graph(n, k, p_in=np.random.uniform(0.5, 0.9), p_out=np.random.uniform(0.01, 0.1))
-        elif gtype == 'sbm_sparse':
+        else: #gtype == 'sbm_sparse':
             k = np.random.randint(min_blocks, max_blocks + 1)
             A = generate_sbm_graph(n, k, p_in=np.random.uniform(0.15, 0.4), p_out=np.random.uniform(0.005, 0.04))
-        elif gtype == 'er_dense':
-            A = generate_er_graph(n, p=np.random.uniform(0.3, 0.7))
-        else: #gtype == 'er_sparse'
-            A = generate_er_graph(n, p=np.random.uniform(0.04, 0.2))
         graphs_adj.append(A)
         graphs_pyg.append(adj_to_pyg(A))
         if (i + 1) % 10 == 0:
