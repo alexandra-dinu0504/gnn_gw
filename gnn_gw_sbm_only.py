@@ -1,20 +1,20 @@
 import argparse
 import os
-import time
 import warnings
 
 import numpy as np
 import torch
 
-from dataset import generate_dataset, save_dataset, load_dataset, compute_gw_distance
+from dataset import generate_dataset, save_dataset, load_dataset
 from model import GWEmbedder
-from train import train_epoch, evaluate
+from train import train_epoch, evaluate, benchmark_inference
 from plot_results import make_plots
 
 warnings.filterwarnings("ignore")
 
 SEED = 0
 GW_SCALE = 10.0
+N_TRAIN_POOL = 20000  # size of the cached pool of training pairs
 
 TRAIN_DATA_PATH = "data/train_data.pt"
 CHECKPOINT_PATH = "checkpoints/gw_model.pt"
@@ -22,14 +22,17 @@ RESULTS_PATH = "results/run_results.pt"
 PLOT_PATH = "results/gw_results.png"
 
 
-def get_train_data(regen_data):
+def get_train_data(regen_data, n_pool):
     if not regen_data and os.path.exists(TRAIN_DATA_PATH):
-        print(f"\n=== Loading cached training data from {TRAIN_DATA_PATH} ===")
-        return load_dataset(TRAIN_DATA_PATH)
+        graphs, pairs, gw = load_dataset(TRAIN_DATA_PATH)
+        if len(pairs) >= n_pool:
+            print(f"\n=== Loading cached training data from {TRAIN_DATA_PATH} ({len(pairs)} pairs) ===")
+            return graphs, pairs, gw
+        print(f"\n=== Cached pool has only {len(pairs)} pairs, need {n_pool} — regenerating ===")
 
     print("\n=== Generating Training Data ===")
     graphs, pairs, gw = generate_dataset(
-        n_pairs=3000, min_nodes=20, max_nodes=100, min_blocks=2, max_blocks=5
+        n_pairs=n_pool, min_nodes=20, max_nodes=100, min_blocks=2, max_blocks=5
     )
     save_dataset(TRAIN_DATA_PATH, graphs, pairs, gw)
     print(f"Cached training data to {TRAIN_DATA_PATH}")
@@ -40,6 +43,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--regen-data", action="store_true",
                         help="Regenerate training data instead of loading the cache")
+    parser.add_argument("--n-train", type=int, default=1000,
+                        help="Number of training pairs to use this run (<= cached pool size)")
     args = parser.parse_args()
 
     np.random.seed(SEED)
@@ -50,8 +55,10 @@ def main():
 
     device = 'cpu'
 
-    # ── Generate datasets ──
-    train_graphs, train_pairs, train_gw = get_train_data(args.regen_data)
+    # ── "Generate" datasets ──
+    train_graphs, train_pairs, train_gw = get_train_data(args.regen_data, N_TRAIN_POOL)
+    train_pairs, train_gw = train_pairs[:args.n_train], train_gw[:args.n_train]
+    print(f"Training on {len(train_pairs)} of {N_TRAIN_POOL} cached pairs")
 
     print("\n=== Generating Test Data ===")
     test_graphs, test_pairs, test_gw = generate_dataset(
@@ -69,7 +76,7 @@ def main():
     shift_gw = shift_gw * GW_SCALE
 
     # ── Model ──
-    model = GWEmbedder(in_channels=2, hidden_channels=64, embed_dim=64, n_layers=3).to(device)
+    model = GWEmbedder(in_channels=2, hidden_channels=64, embed_dim=32, n_layers=3).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4, weight_decay=1e-5)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.5)
 
@@ -112,37 +119,9 @@ def main():
 
     # ── Inference speed comparison ──
     N_BENCH = min(20, len(test_pairs))
-    bench_pairs = test_pairs[:N_BENCH]
-
-    def pyg_to_adj(g):
-        n = g.num_nodes
-        A = np.zeros((n, n))
-        ei = g.edge_index.numpy()
-        A[ei[0], ei[1]] = 1
-        return A
-
-    model.eval()
-    gnn_times = []
-    with torch.no_grad():
-        for i, j in bench_pairs:
-            g1, g2 = test_graphs[i].to(device), test_graphs[j].to(device)
-            b1 = torch.zeros(g1.num_nodes, dtype=torch.long, device=device)
-            b2 = torch.zeros(g2.num_nodes, dtype=torch.long, device=device)
-            t0 = time.perf_counter()
-            emb1 = model(g1.x, g1.edge_index, b1)
-            emb2 = model(g2.x, g2.edge_index, b2)
-            _ = torch.norm(emb1 - emb2, dim=-1).item()
-            gnn_times.append(time.perf_counter() - t0)
-
-    ot_times = []
-    for i, j in bench_pairs:
-        A1, A2 = pyg_to_adj(test_graphs[i]), pyg_to_adj(test_graphs[j])
-        t0 = time.perf_counter()
-        compute_gw_distance(A1, A2)
-        ot_times.append(time.perf_counter() - t0)
-
-    gnn_mean, gnn_std = np.mean(gnn_times) * 1e3, np.std(gnn_times) * 1e3
-    ot_mean,  ot_std  = np.mean(ot_times)  * 1e3, np.std(ot_times)  * 1e3
+    gnn_mean, gnn_std, ot_mean, ot_std = benchmark_inference(
+        model, test_graphs, test_pairs, device=device, n_bench=N_BENCH
+    )
     print(f"\n=== Inference Speed Comparison ({N_BENCH} pairs) ===")
     print(f"GNN inference:      {gnn_mean:8.3f} ± {gnn_std:.3f} ms")
     print(f"OT (exact GW):      {ot_mean:8.3f} ± {ot_std:.3f} ms")
@@ -152,7 +131,7 @@ def main():
     torch.save(model.state_dict(), CHECKPOINT_PATH)
     print(f"\nModel saved to {CHECKPOINT_PATH}")
 
-    # ── Save results bundle (lets you redo plots later without retraining) ──
+    # ── Save results bundle (for generating plots without retraining) ──
     results = {
         "train_losses": train_losses,
         "test_pearsons": test_pearsons,
