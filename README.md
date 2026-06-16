@@ -24,7 +24,7 @@ Train and test the model:
 python gnn_gw_sbm_only.py
 ```
 
-Outputs (all gitignored, regenerated locally — not stored in the repo):
+Outputs (all gitignored, not stored in the repo):
 
 - `data/train_data.pt` — cached training pairs
 - `checkpoints/gw_model.pt` — trained model weights
