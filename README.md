@@ -18,7 +18,7 @@
 
 ## Usage
 
-Train the model:
+Train and test the model:
 
 ```bash
 python gnn_gw_sbm_only.py
@@ -34,5 +34,5 @@ Outputs (all gitignored, regenerated locally — not stored in the repo):
   Flags:
 
 - `--n-train N` — train on `N` pairs sampled from the cached pool this run (default
-  1000; must be `<= N_TRAIN_POOL`).
+  1000; must be `<= N_TRAIN_POOL=20 000`).
 - `--regen-data` — force regenerating the training pool instead of loading the cache.
